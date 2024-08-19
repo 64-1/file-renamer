@@ -8,12 +8,74 @@ def extract_number(filename):
     number = re.search(r'(\d+)', filename)
     return int(number.group(0)) if number else None
 
+def create_folder_if_not_exists(folder_path):
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+
+def handle_tif_files(folder_path, files):
+    acq_folder = os.path.join(folder_path, "acq")
+    comp_folders = {}
+
+    for file in files:
+        if file.startswith("acq"):
+            create_folder_if_not_exists(acq_folder)
+            os.rename(os.path.join(folder_path, file), os.path.join(acq_folder, file))
+        elif file.startswith("comp"):
+            match = re.search(r'comp(\d+)', file)
+            if match:
+                comp_number = match.group(1)
+                comp_folder = os.path.join(folder_path, f"comp{comp_number}")
+                if comp_number not in comp_folders:
+                    create_folder_if_not_exists(comp_folder)
+                    comp_folders[comp_number] = comp_folder
+                os.rename(os.path.join(folder_path, file), os.path.join(comp_folder, file))
+
+    # Rename files in the created folders
+    for comp_folder in comp_folders.values():
+        renaming(comp_folder, ".tif")
+    renaming(acq_folder, ".tif")
+
+def handle_sur_files(folder_path, files):
+    if len(files) == 1:
+        print("Only one .sur file found. Skipping renaming.")
+        return
+
+    filename_patterns = [extract_number(f) is not None for f in files]
+    if len(set(filename_patterns)) > 1:
+        print("Different naming formats detected in .sur files. Skipping renaming.")
+        return
+
+    sur_folder = os.path.join(folder_path, "sur")
+    create_folder_if_not_exists(sur_folder)
+
+    for file in files:
+        os.rename(os.path.join(folder_path, file), os.path.join(sur_folder, file))
+
+    renaming(sur_folder, ".sur")
+
+def handle_csv_files(folder_path, files):
+    csv_folder = os.path.join(folder_path, "csv")
+    create_folder_if_not_exists(csv_folder)
+
+    for file in files:
+        os.rename(os.path.join(folder_path, file), os.path.join(csv_folder, file))
+
+    renaming(csv_folder, ".csv")
+
 def renaming(folder_path, file_extension):
     try:
         files = [f for f in os.listdir(folder_path) if f.endswith(file_extension)]
         
         if file_extension == ".sur":
             handle_sur_files(folder_path, files)
+            return
+
+        if file_extension == ".csv":
+            handle_csv_files(folder_path, files)
+            return
+
+        if file_extension == ".tif":
+            handle_tif_files(folder_path, files)
             return
 
         if not files:
@@ -34,26 +96,6 @@ def renaming(folder_path, file_extension):
         print(f"Error: {folder_path} does not exist")
     except Exception as e:
         print(f"An error has occurred: {e}")
-
-def handle_sur_files(folder_path, files):
-    if len(files) == 1:
-        print("Only one .sur file found. Skipping renaming.")
-        return
-
-    filename_patterns = [extract_number(f) is not None for f in files]
-    if len(set(filename_patterns)) > 1:
-        print("Different naming formats detected in .sur files. Skipping renaming.")
-        return
-
-    numbers = [(fname, extract_number(fname)) for fname in files]
-    sorted_files = sorted([item for item in numbers if item[1] is not None], key=lambda x: x[1])
-    renaming_rules = {old_name: f"{i + 1}.sur" for i, (old_name, _) in enumerate(sorted_files)}
-
-    for old_name, new_name in renaming_rules.items():
-        old_path = os.path.join(folder_path, old_name)
-        new_path = os.path.join(folder_path, new_name)
-        os.rename(old_path, new_path)
-        print(f'Renamed: "{old_path}" to "{new_path}"')
 
 def rename_files_by_model(folder_path, model):
     model_map = {
@@ -143,3 +185,4 @@ if __name__ == "__main__":
     window = RenamingApp()
     window.show()
     app.exec_()
+            
