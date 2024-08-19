@@ -4,7 +4,6 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QFileDialog,
 
 VALID_EXTENSIONS = [".csv", ".tif", ".sur"]
 
-# Extract number sequence from the files and return it 
 def extract_number(filename):
     number = re.search(r'(\d+)', filename)
     return int(number.group(0)) if number else None
@@ -13,8 +12,7 @@ def create_folder_if_not_exists(folder_path):
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
 
-def handle_tif_files(folder_path, files):
-    #creates new folder path
+def handle_tif_files(folder_path, files, model_key):
     acq_folder = os.path.join(folder_path, "acq")
     comp_folders = {}
 
@@ -23,7 +21,6 @@ def handle_tif_files(folder_path, files):
             create_folder_if_not_exists(acq_folder)
             os.rename(os.path.join(folder_path, file), os.path.join(acq_folder, file))
         elif file.startswith("comp"):
-            # find all files that name starts wit comp + digit
             match = re.search(r'comp(\d+)', file)    
             if match:
                 comp_number = match.group(1)
@@ -33,28 +30,15 @@ def handle_tif_files(folder_path, files):
                     comp_folders[comp_number] = comp_folder
                 os.rename(os.path.join(folder_path, file), os.path.join(comp_folder, file))
 
-    # Rename files in the created folders
+    if os.path.exists(acq_folder):
+        renaming_files_in_folder(acq_folder, ".tif")
+        rename_files_by_model(acq_folder, model_key)
+    
     for comp_folder in comp_folders.values():
         renaming_files_in_folder(comp_folder, ".tif")
-    renaming_files_in_folder(acq_folder, ".tif")
+        rename_files_by_model(comp_folder, model_key)
 
-def handle_sur_files(folder_path, files):
-    sur_folder = None
-
-    for file in files:
-        if file.startswith("comp"):
-            print("Comp sur found. Skipping renaming.")
-            continue  # Skip to the next file
-        elif file.startswith("acq"):
-            if sur_folder is None:
-                sur_folder = os.path.join(folder_path, "sur")
-                create_folder_if_not_exists(sur_folder)
-            os.rename(os.path.join(folder_path, file), os.path.join(sur_folder, file))
-
-    if sur_folder is not None:
-        renaming_files_in_folder(sur_folder, ".sur")
-
-def handle_csv_files(folder_path, files):
+def handle_csv_files(folder_path, files, model_key):
     csv_folder = os.path.join(folder_path, "csv")
     create_folder_if_not_exists(csv_folder)
 
@@ -62,17 +46,33 @@ def handle_csv_files(folder_path, files):
         os.rename(os.path.join(folder_path, file), os.path.join(csv_folder, file))
 
     renaming_files_in_folder(csv_folder, ".csv")
+    rename_files_by_model(csv_folder, model_key)
+
+def handle_sur_files(folder_path, files, model_key):
+    if len(files) == 1:
+        print("Single .sur file detected. Skipping renaming.")
+        return
+
+    sur_folder = os.path.join(folder_path, "sur")
+    create_folder_if_not_exists(sur_folder)
+
+    for file in files:
+        os.rename(os.path.join(folder_path, file), os.path.join(sur_folder, file))
+    
+    renaming_files_in_folder(sur_folder, ".sur")
+    rename_files_by_model(sur_folder, model_key)
 
 def renaming_files_in_folder(folder_path, file_extension):
-    if not os.path.exists(folder_path):
+    files = [f for f in os.listdir(folder_path) if f.endswith(file_extension)]
+    if not files:
         print(f"Error: {folder_path} does not exist")
         return
-    
+
     files = [f for f in os.listdir(folder_path) if f.endswith(file_extension)]
     if not files:
         print(f"No files with extension {file_extension} found in {folder_path}.")
         return
-    
+
     numbers = [(fname, extract_number(fname)) for fname in files]
     sorted_files = sorted([item for item in numbers if item[1] is not None], key=lambda x: x[1])
     renaming_rules = {old_name: f"{i + 1}{file_extension}" for i, (old_name, _) in enumerate(sorted_files)}
@@ -83,16 +83,15 @@ def renaming_files_in_folder(folder_path, file_extension):
         os.rename(old_path, new_path)
         print(f'Renamed: "{old_path}" to "{new_path}"')
 
-def renaming(folder_path):
+def renaming(folder_path, model_key):
     for file_extension in VALID_EXTENSIONS:
         files = [f for f in os.listdir(folder_path) if f.endswith(file_extension)]
         if file_extension == ".sur":
-            handle_sur_files(folder_path, files)
+            handle_sur_files(folder_path, files, model_key)
         elif file_extension == ".csv":
-            handle_csv_files(folder_path, files)
+            handle_csv_files(folder_path, files, model_key)
         elif file_extension == ".tif":
-            handle_tif_files(folder_path, files)
-
+            handle_tif_files(folder_path, files, model_key)
 
 def rename_files_by_model(folder_path, model):
     model_map = {
@@ -100,8 +99,6 @@ def rename_files_by_model(folder_path, model):
         'b': [25, 50, 100, 150, 180, 150, 100, 50, 25],
         'c': [25, 50, 75, 100, 125, 100, 75, 50, 25]
     }
-
-    renaming(folder_path)
 
     for file_extension in VALID_EXTENSIONS:
         files = [f for f in os.listdir(folder_path) if f.endswith(file_extension)]
@@ -135,26 +132,21 @@ class RenamingApp(QMainWindow):
 
         layout = QVBoxLayout()
 
-        # Label
         self.label = QLabel("Select a folder and renaming model", self)
         layout.addWidget(self.label)
 
-        # Folder selection button
         self.folder_button = QPushButton("Select Folder", self)
         self.folder_button.clicked.connect(self.select_folder)
         layout.addWidget(self.folder_button)
 
-        # Dropdown for selecting model
         self.model_dropdown = QComboBox(self)
         self.model_dropdown.addItems(["260C[a]", "180C[b]", "125C[c]"])
         layout.addWidget(self.model_dropdown)
 
-        # Start renaming button
         self.rename_button = QPushButton("Start Renaming", self)
         self.rename_button.clicked.connect(self.start_renaming)
         layout.addWidget(self.rename_button)
 
-        # Set layout
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
@@ -176,7 +168,7 @@ class RenamingApp(QMainWindow):
         selected_model = self.model_dropdown.currentText()
         model_key = model_map[selected_model]
         
-        rename_files_by_model(self.folder_path, model_key)
+        renaming(self.folder_path, model_key)
         self.label.setText("Renaming completed.")
 
 if __name__ == "__main__":
@@ -184,4 +176,3 @@ if __name__ == "__main__":
     window = RenamingApp()
     window.show()
     app.exec_()
-            
